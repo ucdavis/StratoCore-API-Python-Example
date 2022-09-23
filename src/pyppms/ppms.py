@@ -17,6 +17,9 @@ import requests
 
 from .common import dict_from_single_response, parse_multiline_response
 from .user import PpmsUser
+from .invoice import PpmsInvoice
+from .order import PpmsOrder
+from .orderline import PpmsOrderLine
 from .system import PpmsSystem
 from .booking import PpmsBooking
 
@@ -95,6 +98,8 @@ class PpmsConnection:
         self.url = url
         self.api_key = api_key
         self.timeout = timeout
+        self.invoices = {}
+        self.orders = {}
         self.users = {}
         self.fullname_mapping = {}
         self.systems = {}
@@ -739,6 +744,170 @@ class PpmsConnection:
             emails.append(email)
 
         return emails
+
+    ############ invoices and orders ############
+    
+    def new_order(  # pylint: disable-msg=too-many-arguments
+        self, serviceid, login, quantity, projectid=None, accepted=None, completed=None, completeddate=None, comments=None, scomments=None, bcode=None
+    ):
+        """Create a new order in PPMS.
+
+        The method is asking PPMS to create a new order account with the given details.
+
+        Parameters
+        ----------
+        serviceid : str
+            The service identification number of the service you want to order     . 
+        login : str
+            The unique unique string identifier for the user making the order.
+        quantity : int
+            The quantity you want to order.
+        projectid : str, optional
+            The project identification number of the related project.
+        accepted : boolean str, optional
+            When accepted=true , the order will automatically be accepted.
+        completed : boolean str, optional
+            When completed=true , the order will automatically be completed only if accepted=true.
+        completeddate : str, optional
+            Your order completion date in the following format: “YYYY-MM-DD hh:mm:ss”
+        comments : str, optional
+            User comments.
+        scomments : str, optional
+            Staffr comments.
+        bcode : str, optional
+            Account number.
+
+        Raises
+        ------
+        RuntimeError
+            Will be raised in case creating the order fails.
+        """
+        #if self.user_exists(login):
+        #    LOG.warning("NOT creating order [%s] as it already exists!", login)
+        #    return
+                
+        req_data = {
+            "serviceid": serviceid,
+            "login": login,
+            "quantity": quantity,
+        }
+        
+        if projectid:
+            req_data["projectid"] = projectid
+        
+        if accepted:           
+            req_data["accepted"] = accepted 
+        
+        if completed:
+            req_data["completed"] = completed
+        
+        if completeddate:
+            req_data["completeddate"] = completeddate
+        
+        if comments:
+            req_data["comments"] = comments
+        
+        if scomments:
+            req_data["scomments"] = scomments
+        
+        if bcode:
+            req_data["bcode"] = bcode
+ 
+        response = self.request("createorder", req_data)
+
+        LOG.info("Created order in PPMS.")
+        LOG.debug("Response was: %s", response.text)
+    
+    def get_order_list(self):
+        """get the list of orders currently in the PPMS database.
+
+        Returns
+        -------
+        list(PpmsOrder)
+            A list with PpmsOrder objects that are PPMS invoices.
+        """        
+        
+        response = self.request("getorders")
+        orderlist = response.text.splitlines()
+        orders = []
+        linenum = 0
+        
+        for line in orderlist:
+            linenum = linenum + 1
+            
+            if linenum > 2 :
+                order = PpmsOrder(line)
+                
+                responseline = self.request("getorderlines", {"orderref": order.orderref})
+                orderlinelist = responseline.text.splitlines()
+                orderslines = []
+                lineslinenum = 0
+                
+                for linesline in orderlinelist:
+                    lineslinenum = lineslinenum + 1
+            
+                    if lineslinenum > 2 :
+                        orderline = PpmsOrderLine(linesline)
+                        orderslines.append(orderline)                        
+                        
+                order.orderlines = orderslines
+                
+                orders.append(order)
+                #PpmsOrderLine
+            
+        LOG.debug("%s orders in the PPMS database: %s", len(orderlist), ", ".join(orderlist))
+        self.orders = orders
+        
+        
+        return orders
+
+    def get_invoice_list(self):
+        """get the list of invoices currently in the PPMS database.
+
+        Returns
+        -------
+        list(PpmsInvoice)
+            A list with PpmsInvoice objects that are PPMS invoices.
+        """
+        response = self.request("getinvoicelist")
+
+        invoicelist = response.text.splitlines()
+        invoices = []
+        for invoiceid in invoicelist:
+            invoice = self.get_invoice_details(invoiceid)
+            invoices.append(invoice)
+           
+        LOG.debug("%s invoices in the PPMS database: %s", len(invoicelist), ", ".join(invoicelist))            
+        self.invoices = invoices
+        
+        return invoices
+        
+    def get_invoice_details(self, invoiceid):
+        """get a specific invoice. CSV format: column 1: account number, column 2: amount.
+
+        Returns
+        -------
+        PpmsInvoice
+            The Invoice object created from the PUMAPI response. CSV format: column 1: account number, column 2: amount.
+        """
+        responsecharge = self.request("getinvoice", {"invoiceid": invoiceid})
+
+        if not responsecharge.text:
+            msg = f"Invoice [{invoiceid}] is unknown to PPMS"
+            LOG.error(msg)
+            raise KeyError(msg)
+            
+        responsedetail = self.request("getinvoicedetails", {"invoiceid": invoiceid})
+
+        if not responsedetail.text:
+            msg = f"Invoice [{invoiceid}] is unknown to PPMS"
+            LOG.error(msg)
+            raise KeyError(msg)
+
+        invoice = PpmsInvoice(responsecharge.text, responsedetail.text, invoiceid)
+        
+        self.invoices[invoiceid] = invoice  # update / add to the cached invoice objs
+        return invoice      
 
     ############ resources ############
 
