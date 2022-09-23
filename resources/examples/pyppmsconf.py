@@ -1,7 +1,7 @@
 """Configuration settings to be imported by pyppms."""
 
 # the URL of the PUMAPI to talk to:
-PUMAPI_URL = "https://CLIENT_URL/pumapi/"
+PUMAPI_URL = "https://SERVER_URL/pumapi/"
 
 # API key with appropriate permissions to run the desired commands. Store this as an OS enviromental variable named "PUMAPI_KEY":
 PUMAPI_KEY = os.environ["PUMAPI_KEY"]
