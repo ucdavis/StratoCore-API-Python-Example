@@ -1,4 +1,5 @@
 """Configuration settings to be imported by pyppms."""
+import os
 
 # the URL of the PUMAPI to talk to:
 PUMAPI_URL = "https://SERVER_URL/pumapi/"
